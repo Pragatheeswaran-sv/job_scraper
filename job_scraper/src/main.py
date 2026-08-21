@@ -3,6 +3,7 @@ from fastapi import FastAPI
 
 from src.config import get_logger
 from src.jwt_auth.api import router as auth_router
+from src.jobs.api import router as job_router
 
 logger = get_logger(__name__)
 
@@ -21,6 +22,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_router)
+app.include_router(job_router)
 
 
 @app.get("/health_check")

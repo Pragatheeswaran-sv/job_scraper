@@ -162,7 +162,7 @@ class TestLogoutEndpoint:
 class TestProfileEndpoint:
     def test_profile_success(self, client):
         from src.main import app
-        from src.services.jwt_auth.dependancy import get_current_user
+        from src.jwt_auth.dependancy import get_current_user
 
         app.dependency_overrides[get_current_user] = lambda: {
             "sub": "user-id-123",
@@ -198,7 +198,7 @@ class TestProfileEndpoint:
 class TestAdminProfileEndpoint:
     def test_admin_profile_success(self, client):
         from src.main import app
-        from src.services.jwt_auth.dependancy import get_current_user
+        from src.jwt_auth.dependancy import get_current_user
 
         app.dependency_overrides[get_current_user] = lambda: {
             "sub": "user-id-123",
@@ -224,7 +224,7 @@ class TestAdminProfileEndpoint:
 class TestUserProfileEndpoint:
     def test_user_profile_success(self, client):
         from src.main import app
-        from src.services.jwt_auth.dependancy import get_current_user
+        from src.jwt_auth.dependancy import get_current_user
 
         app.dependency_overrides[get_current_user] = lambda: {
             "sub": "user-id-123",

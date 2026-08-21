@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from src.services.jwt_auth.dependancy import get_current_user, require_role
+from src.jwt_auth.dependancy import get_current_user, require_role
 
 
 class TestGetCurrentUser:
