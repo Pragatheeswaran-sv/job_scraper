@@ -9,6 +9,11 @@ import os
 from dotenv import load_dotenv
 from src.database import Base
 from src.jwt_auth import models
+from src.jobs import models
+from src.company import models
+from src.contact import models
+from src.scraper import models
+
 
 load_dotenv()
 
