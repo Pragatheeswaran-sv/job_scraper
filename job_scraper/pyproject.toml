@@ -18,6 +18,8 @@ pwdlib = {extras = ["argon2"], version = "^0.3.1"}
 pyjwt = "^2.13.0"
 mysql-connector-python = "^26.7.0"
 pyodbc = "^5.3.0"
+celery = "^5.6.3"
+redis = "^8.1.0"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^8.3.0"
