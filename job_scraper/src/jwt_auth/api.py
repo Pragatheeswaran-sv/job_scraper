@@ -4,14 +4,14 @@ from sqlalchemy.orm import Session
 
 from src.config import get_logger
 from src.database import get_db
-from src.services.jwt_auth.dependancy import get_current_user, require_role
+from src.jwt_auth.dependancy import get_current_user, require_role
 from src.jwt_auth.schema import (
     APIResponse,
     LoginRequest,
     TokenResponse,
     RefreshTokenRequest,
 )
-from src.services.jwt_auth.service import (
+from src.jwt_auth.service import (
     authenticate_user,
     create_tokens,
     refresh_access_token,
