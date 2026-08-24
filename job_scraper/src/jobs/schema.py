@@ -27,29 +27,19 @@ class ContactSchema(BaseModel):
         from_attributes = True
 
 
-class JobSkillSchema(BaseModel):
+class SkillSchema(BaseModel):
     id: str
     name: str
 
     class Config:
         from_attributes = True
 
-
-class JobRequiredSkillSchema(BaseModel):
+class JobSkillSchema(BaseModel):
     id: str
-    skill: JobSkillSchema
-
+    skill: SkillSchema
+    skill_type: str
     class Config:
         from_attributes = True
-
-
-class JobPreferredSkillSchema(BaseModel):
-    id: str
-    skill: JobSkillSchema
-
-    class Config:
-        from_attributes = True
-
 
 class JobSchema(BaseModel):
     id: str
@@ -73,8 +63,7 @@ class JobSchema(BaseModel):
     posted_at: datetime | None = None
     company: CompanySchema | None = None
     posted_by_contact: ContactSchema | None = None
-    required_skills: list[JobRequiredSkillSchema] = []
-    preferred_skills: list[JobPreferredSkillSchema] = []
+    job_skills: list[JobSkillSchema] = []
 
     class Config:
         from_attributes = True

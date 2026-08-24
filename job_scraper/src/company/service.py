@@ -29,16 +29,10 @@ def create_company(db: Session, name: str, run_id: str, location: str | None = N
         db.refresh(company)
 
         logger.info("Company inserted: %s", name)
-        return {
-            "status_code": status.HTTP_200_OK,
-            "message": "Company added successfully",
-            "data": {
-                "company_id": company.id,
-                "company_name": company.name,
-            }
-        }
+        return company.id
+        
     except Exception as e:
-            logger.error('ERROR in create company function: ', e)
+            logger.error('ERROR in create scrape_run function: %s', e)
             return {
                 'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "message": "Error while adding company"

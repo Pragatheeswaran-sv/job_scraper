@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
-from src.scraper.models import ScrapeRun
+from src.background_task.models import ScrapeRun
 from fastapi import status
 
 from src.config import get_logger
@@ -13,15 +15,8 @@ def create_scrape_run(db: Session, scrape_status: str, records_scraped: int = 0,
         db.commit()
         db.refresh(run)
         logger.info("ScrapeRun inserted: %s", run.id)
-        return {
-            "status_code": status.HTTP_200_OK,
-            "message": "scrape run added successfully",
-            "data": {
-                "run_id": run.id,
-                "start_at": run.started_at,
-                "status": run.status
-            }
-        }
+        return run.id
+        
     except Exception as e:
         db.rollback()
         run = ScrapeRun(status="failed", records_scraped=0, exception=str(e))
@@ -38,3 +33,15 @@ def create_scrape_run(db: Session, scrape_status: str, records_scraped: int = 0,
                 "status": run.status
             }
         }
+
+def update_scrape_run(db, run_id, scrape_status, records_scraped=0, exception=None):
+    run = db.query(ScrapeRun).filter(ScrapeRun.id == run_id).first()
+    if not run:
+        return None
+    run.status = scrape_status
+    run.records_scraped = records_scraped
+    run.exception = exception
+    run.ended_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(run)
+    return run

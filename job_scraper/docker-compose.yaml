@@ -24,6 +24,6 @@ services:
       - .env
     volumes:
       - .:/app
-    entrypoint: ["celery", "-A", "src.celery_app", "worker", "--loglevel=info"]
+    entrypoint: ["celery", "-A", "src.celery_app", "worker", "--loglevel=info", "--pool=solo"]
     depends_on:
       - redis
