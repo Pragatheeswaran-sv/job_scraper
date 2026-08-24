@@ -31,17 +31,10 @@ def create_contact(db: Session, first_name: str | None = None, last_name: str | 
         db.refresh(contact)
 
         logger.info("Contact inserted: %s %s", first_name, last_name)
-        return {
-            "status_code": status.HTTP_200_OK,
-            "message": "Contact added successfully",
-            "data": {
-                "contact_id": contact.id,
-                "first_name": contact.first_name,
-                "last_name": contact.last_name
-            }
-        }
+        return contact.id
+        
     except Exception as e:
-        logger.error('ERROR in create contact function: ', e)
+        logger.error('ERROR in create contact function: %s', e)
         return {
             'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
             "message": "Error while adding contact"

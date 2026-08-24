@@ -3,13 +3,11 @@ import uuid
 from sqlalchemy import (
     Boolean,
     Column,
-    Integer,
     String,
     Text,
     Float,
     DateTime,
     ForeignKey,
-    JSON,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -54,12 +52,10 @@ class Job(Base):
     company = relationship("Company", back_populates="jobs")
     posted_by_contact = relationship("Contact", back_populates="posted_jobs", foreign_keys=[posted_by])
     scrape_run = relationship("ScrapeRun", back_populates="jobs")
-    required_skills = relationship("JobRequiredSkill", back_populates="job", cascade="all, delete-orphan")
-    preferred_skills = relationship("JobPreferredSkill", back_populates="job", cascade="all, delete-orphan")
+    job_skills = relationship("JobSkill", back_populates="job", cascade="all, delete-orphan")
 
-
-class JobSkill(Base):
-    __tablename__ = "job_skills"
+class Skill(Base):
+    __tablename__ = "skills"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, unique=True, index=True)
@@ -70,36 +66,21 @@ class JobSkill(Base):
     updated_by = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
-    required_jobs = relationship("JobRequiredSkill", back_populates="skill")
-    preferred_jobs = relationship("JobPreferredSkill", back_populates="skill")
+    
+    job_skills = relationship("JobSkill", back_populates="skill")
 
-class JobPreferredSkill(Base):
-    __tablename__ = "job_preferred_skills"
+class JobSkill(Base):
+    __tablename__ = "job_skills"
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     job_id = Column(String(36), ForeignKey("jobs.id"), nullable=False, index=True)
-    skill_id = Column(String(36), ForeignKey("job_skills.id"), nullable=False, index=True)
-
+    skill_id = Column(String(36), ForeignKey("skills.id"), nullable=False, index=True)
+    skill_type = Column(String(20), nullable=False)
+    
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     created_by = Column(String(255), nullable=True)
     updated_by = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
-    job = relationship("Job", back_populates="preferred_skills")
-    skill = relationship("JobSkill", back_populates="preferred_jobs")
-
-class JobRequiredSkill(Base):
-    __tablename__ = "job_required_skills"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    job_id = Column(String(36), ForeignKey("jobs.id"), nullable=False, index=True)
-    skill_id = Column(String(36), ForeignKey("job_skills.id"), nullable=False, index=True)
-
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
-    created_by = Column(String(255), nullable=True)
-    updated_by = Column(String(255), nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False)
-
-    job = relationship("Job", back_populates="required_skills")
-    skill = relationship("JobSkill", back_populates="required_jobs")
+    job = relationship("Job", back_populates="job_skills")
+    skill = relationship("Skill", back_populates="job_skills")

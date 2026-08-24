@@ -5,10 +5,10 @@ from sqlalchemy import asc, desc, func
 
 from src.config import get_logger
 from src.database import SessionLocal
-from src.jobs.models import Job, JobPreferredSkill, JobRequiredSkill, JobSkill
+from src.jobs.models import Job, Skill, JobSkill
 from src.contact.models import Contact
 from src.company.models import Company
-from src.scraper.models import ScrapeRun
+from src.background_task.models import ScrapeRun
 from src.jobs.schema import JobListResponse, JobSchema
 
 logger = get_logger(__name__)
@@ -24,8 +24,7 @@ def get_posted_jobs(page, per_page, filter_column, filter_value, sort_column, so
         query = db.query(Job).options(
             selectinload(Job.company),
             selectinload(Job.posted_by_contact),
-            selectinload(Job.required_skills),
-            selectinload(Job.preferred_skills),
+            selectinload(Job.job_skills).selectinload(JobSkill.skill)
         )
         if filter_column and filter_value and filter_column in ALLOWED_FILTER_COLUMNS:
             if filter_column in FLOAT_FIELDS:
@@ -77,54 +76,31 @@ def get_posted_jobs(page, per_page, filter_column, filter_value, sort_column, so
         db.close()
 
 
-def add_require_and_preferred_skills(db, job_id, skill_id, required=False):
-    try:
-        if required:
-            skill_required = JobRequiredSkill(
-                job_id = job_id,
-                skill_id = skill_id,
-                is_active = True
-            )
-            db.add(skill_required)
-        else:
-            skill_preferred = JobPreferredSkill(
-                job_id = job_id,
-                skill_id = skill_id,
-                is_active = True
-            )
-            db.add(skill_preferred)
-    except Exception as e:
-        logger.error('Error while inserting skills: %s', e)
-        raise
-
 def create_skills(db: Session, job_id: str, required_skills: list, preferred_skills: list):
     try:
-        skill_combined = required_skills + preferred_skills
-        for skill_name in skill_combined:
-            existing = db.query(JobSkill).filter(JobSkill.name == skill_name).first()
+        for skill_name in required_skills + preferred_skills:
+            existing = db.query(Skill).filter(Skill.name == skill_name).first()
             if existing:
                 skill_id = existing.id
             else:
-                new_skill = JobSkill(name = skill_name, is_active = True)
+                new_skill = Skill(name=skill_name, is_active=True)
                 db.add(new_skill)
                 db.flush()
                 skill_id = new_skill.id
                 logger.info("Skill inserted: %s", new_skill.name)
 
-            if skill_name in required_skills:
-                add_require_and_preferred_skills(db, job_id, skill_id, required=True)
-            else:
-                add_require_and_preferred_skills(db, job_id, skill_id, required=False)
+            skill_type = "required" if skill_name in required_skills else "preferred"
+            job_skill = JobSkill(
+                job_id=job_id,
+                skill_id=skill_id,
+                skill_type=skill_type,
+                is_active=True,
+            )
+            db.add(job_skill)
 
         db.commit()
-        return {
-            "status_code": status.HTTP_200_OK,
-            "message": "Skills added successfully",
-        }
+        return {"status_code": 200, "message": "Skills added successfully"}
     except Exception as e:
         db.rollback()
-        logger.error('Error in create_skills: %s', e)
-        return {
-            'status_code': status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "message": "Error while adding skills"
-        }
+        logger.error("Error in create_skills: %s", e)
+        return {"status_code": 500, "message": "Error while adding skills"}
