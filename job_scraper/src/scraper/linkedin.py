@@ -9,6 +9,7 @@ from urllib.parse import quote
 import logging
 from fastapi import status
 from src.config import get_logger
+from datetime import datetime
 
 
 logger = get_logger(__name__)
@@ -864,11 +865,12 @@ def extract_people_you_can_reach_out(main_text):
 
     return clean_text("\n".join(result_lines))
 
-def save_filtered_text(index, header, about_text, people_text):
+def save_filtered_text(run_id, index, header, about_text, people_text):
 
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(f"logs/{run_id}", exist_ok=True)
 
-    filename = f"logs/job_filtered_raw_file{index}.txt"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"logs/{run_id}/{index}_{timestamp}.txt"
     parts = []
 
     parts.append("JOB TITLE:\n" + header.get("job_title", ""))
@@ -898,9 +900,10 @@ def save_filtered_text(index, header, about_text, people_text):
 
         logger.info(f"Saved filtered text: {filename}")
     except Exception as e:
+        filename = None
         logger.info(" ".join(str(value) for value in ("Filtered text save error:", e,)))
 
-    return result
+    return result, filename
 
 def extract_job_with_groq(filtered_text, linkedin_url):
     if not GROQ_ENABLED:
@@ -1380,7 +1383,7 @@ def parse_groq_response(response, url, header):
 
     return data
 
-def process_job(page, url, index):
+def process_job(page, url, run_id, index):
     logger.info(f"Processing job {index}: {url}")
 
     try:
@@ -1405,7 +1408,8 @@ def process_job(page, url, index):
     about_text = extract_about_job(page, main_text)
     people_text = extract_people_you_can_reach_out(main_text)
 
-    filtered_text = save_filtered_text(
+    filtered_text, raw_file_path  = save_filtered_text(
+        run_id,
         index,
         header,
         about_text,
@@ -1474,12 +1478,15 @@ def process_job(page, url, index):
     if not result:
         return None
 
+    result["_raw_file_path"] = raw_file_path
+
     logger.info(f"Extracted: {result['job_title']} | "
         f"{result['company']}")
 
     return result
 
 def scrape_linkedin_jobs(
+    run_id: str,
     search_keyword: str = SEARCH_KEYWORD,
     search_location: str = SEARCH_LOCATION,
     max_jobs: int = MAX_JOBS,
@@ -1582,7 +1589,7 @@ def scrape_linkedin_jobs(
 
                 for index, url in enumerate(job_links, start=1):
                     try:
-                        result = process_job(page, url, index)
+                        result = process_job(page, url, run_id, index)
 
                         if result:
                             results.append(result)
@@ -1617,6 +1624,7 @@ def scrape_linkedin_jobs(
                     len(job_links),
                     len(results)
                 )
+                logger.info('Output Json: %s', output)
 
                 return {
                     "status_code": status.HTTP_200_OK,
