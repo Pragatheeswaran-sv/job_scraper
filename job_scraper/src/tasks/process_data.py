@@ -1,3 +1,5 @@
+import os
+
 from src.celery_app import celery_app
 from src.database import SessionLocal
 from src.background_task.service import create_scrape_run, update_scrape_run
@@ -7,6 +9,7 @@ from src.jobs.service import create_skills
 from src.jobs.models import Job
 from src.scraper.linkedin import scrape_linkedin_jobs
 from src.config import get_logger
+import shutil
 
 logger = get_logger(__name__)
 
@@ -19,6 +22,7 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
         logger.info("ScrapeRun created: %s", run_id)
 
         scrape_result = scrape_linkedin_jobs(
+            run_id,
             search_keyword=search_keyword,
             search_location=search_location,
             max_jobs=max_jobs,
@@ -33,7 +37,8 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
 
         for job_json in jobs_data:
             company_result = create_company(
-                db, name=job_json.get("company", ""),
+                db, 
+                name=job_json.get("company", ""),
                 run_id=run_id,
                 location=job_json.get("company_location"),
                 description=job_json.get("company_information")
@@ -48,9 +53,12 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
             posted_by_contact_id = None
             if first_name:
                 contact_result = create_contact(
-                    db, first_name=first_name, last_name=last_name,
+                    db, 
+                    first_name=first_name, 
+                    last_name=last_name,
                     contact_url=posted_by.get("linkedin_url"),
-                    company_id=company_id, run_id=run_id
+                    company_id=company_id, 
+                    run_id=run_id
                 )
                 posted_by_contact_id = contact_result if isinstance(contact_result, str) else None
 
@@ -96,10 +104,22 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
                 required_skills=job_json.get("required_skills", []),
                 preferred_skills=job_json.get("preferred_skills", [])
             )
+
+            raw_file_path = job_json.get("_raw_file_path")
+            if raw_file_path and os.path.exists(raw_file_path):
+
+                dir_name = os.path.dirname(raw_file_path)
+                old_timestamp = os.path.basename(raw_file_path).split("_", 1)[1].replace(".txt", "")
+                new_filename = f"{job.id}_{old_timestamp}.txt"
+                new_path = os.path.join(dir_name, new_filename)
+                os.rename(raw_file_path, new_path)
+
             records_inserted += 1
 
         db.commit()
         update_scrape_run(db, run_id, "success", records_scraped=records_inserted)
+        shutil.rmtree(f"logs/{run_id}", ignore_errors=True)
+
         logger.info("Scrape completed: %s records", records_inserted)
         return {"run_id": run_id, "status": "success", "records": records_inserted}
 
@@ -108,7 +128,7 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
         logger.error("Scrape task failed: %s", e)
         if run_id:
             try:
-                update_scrape_run(db, run_id, "failed", exception=str(e))
+                update_scrape_run(db, run_id, "failed", records_scraped=records_inserted, exception=str(e))
             except Exception:
                 logger.error("Failed to update ScrapeRun %s", run_id)
     finally:
