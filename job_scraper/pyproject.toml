@@ -20,6 +20,7 @@ mysql-connector-python = "^26.7.0"
 pyodbc = "^5.3.0"
 celery = "^5.6.3"
 redis = "^8.1.0"
+apscheduler = "^3.11.3"
 playwright = "^1.62.0"
 openai = "^3.3.1"
 
