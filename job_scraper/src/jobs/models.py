@@ -36,6 +36,7 @@ class Job(Base):
     work_type = Column(String(50), nullable=True)
     source = Column(String(100), nullable=False, index=True)
     job_url = Column(Text, nullable=False, unique=True)
+    job_url_id = Column(String(12), nullable=True)
 
     company_id = Column(String(36), ForeignKey("companies.id"), nullable=True, index=True)
     posted_by = Column(String(36), ForeignKey("contacts.id"), nullable=True, index=True)
