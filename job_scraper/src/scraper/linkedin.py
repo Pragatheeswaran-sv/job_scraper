@@ -11,6 +11,9 @@ from fastapi import status
 from src.config import get_logger
 from datetime import datetime
 
+from sqlalchemy.orm import Session
+from src.jobs.models import Job
+from src.database import SessionLocal
 
 logger = get_logger(__name__)
 
@@ -23,7 +26,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY","")
 
 SEARCH_KEYWORD = "Python"
 SEARCH_LOCATION = "chennai"
-MAX_JOBS = 2
+MAX_JOBS = 3
 MAX_PAGINATION_PAGES = 100
 LINKEDIN_PAGE_SIZE = 25
 MAX_SCROLLS_PER_PAGE = 20
@@ -210,6 +213,49 @@ def save_search_debug(page):
         logger.info(f"Saved {SEARCH_DEBUG_FILE}")
     except Exception as e:
         logger.info(" ".join(str(value) for value in ("Could not save search HTML:", e,)))
+
+def extract_job_id_from_url(job_url):
+    if not job_url:
+        return None
+
+    match = re.search(r"/jobs/view/(\d+)", job_url)
+
+    if match:
+        return match.group(1)
+
+    return None
+
+def get_unmatched_job_ids(db:Session, job_links):
+    job_ids = []
+
+    for job_url in job_links:
+        job_id = extract_job_id_from_url(job_url)
+
+        if job_id and job_id not in job_ids:
+            job_ids.append(job_id)
+
+    existing_ids = {
+        row[0]
+        for row in db.query(Job.job_url_id)
+        .filter(Job.job_url_id.in_(job_ids))
+        .all()
+    }
+
+    unmatched_ids = [
+        job_id
+        for job_id in job_ids
+        if job_id not in existing_ids
+    ]
+
+    logger.info(
+        "Total job IDs: %s | Existing: %s | New: %s",
+        len(job_ids),
+        len(existing_ids),
+        len(unmatched_ids)
+    )
+
+    return unmatched_ids
+
 
 def extract_job_id(href):
     if not href:
@@ -1383,7 +1429,7 @@ def parse_groq_response(response, url, header):
 
     return data
 
-def process_job(page, url, run_id, index):
+def process_job(page, url, run_id, index, job_id):
     logger.info(f"Processing job {index}: {url}")
 
     try:
@@ -1422,6 +1468,7 @@ def process_job(page, url, run_id, index):
 
     if not GROQ_ENABLED:
         return {
+            "job_id": job_id,
             "job_title": header["job_title"],
             "company": header["company"],
             "company_location": "",
@@ -1471,6 +1518,9 @@ def process_job(page, url, run_id, index):
         header
     )
 
+    if job_id: 
+        result['job_url_id'] = job_id
+ 
     #replace about the job
     if result['job_description']:
         result['job_description'] = about_text
@@ -1500,6 +1550,8 @@ def scrape_linkedin_jobs(
     global MAX_PAGINATION_PAGES
     global LINKEDIN_PAGE_SIZE
     global MAX_SCROLLS_PER_PAGE
+
+    db = SessionLocal()
 
     try:
         if not search_keyword:
@@ -1564,6 +1616,11 @@ def scrape_linkedin_jobs(
 
                 total_matching_jobs = get_total_result_count(page)
                 job_links = collect_all_job_links(page)
+                job_ids = get_unmatched_job_ids(db, job_links)
+                job_id_to_url = {
+                    extract_job_id_from_url(url): url
+                    for url in job_links
+                }
 
                 # save_search_debug(page)
 
@@ -1587,9 +1644,10 @@ def scrape_linkedin_jobs(
                     len(job_links)
                 )
 
-                for index, url in enumerate(job_links, start=1):
+                for index, job_id in enumerate(job_ids, start=1):
+                    url = job_id_to_url.get(job_id)
                     try:
-                        result = process_job(page, url, run_id, index)
+                        result = process_job(page, url, run_id, index, job_id)
 
                         if result:
                             results.append(result)

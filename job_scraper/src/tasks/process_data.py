@@ -95,6 +95,7 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
                 posted_by=posted_by_contact_id,
                 run_id=run_id,
                 is_active=True,
+                job_url_id=job_json.get("job_url_id", "")
             )
             db.add(job)
             db.flush()
