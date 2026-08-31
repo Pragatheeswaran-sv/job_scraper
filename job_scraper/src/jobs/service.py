@@ -119,6 +119,7 @@ def send_csv_email(file_path: str, client_email: str):
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_username = os.getenv("SMTP_USERNAME")
     smtp_password = os.getenv("SMTP_PASSWORD")
+    cc_emails = os.getenv("CC_EMAILS")
 
     file_path = Path(file_path)
 
@@ -129,6 +130,7 @@ def send_csv_email(file_path: str, client_email: str):
 
     message["From"] = smtp_username
     message["To"] = client_email
+    message["Cc"] = cc_emails
     message["Subject"] = "Today Scraped Jobs Report"
 
     message.set_content(
@@ -200,33 +202,47 @@ def export_scraped_jobs():
             company = job.company
             contact = job.posted_by_contact
 
+            # record = {
+            #     "id": job.id,
+            #     "title": job.title,
+            #     "location": job.location,
+            #     "employment_type": job.employment_type,
+            #     "work_type": job.work_type,
+            #     # "description": job.description,
+            #     "education_required": job.education_required,
+            #     "min_experience": job.min_experience,
+            #     "max_experience": job.max_experience,
+            #     "min_salary": job.min_salary,
+            #     "max_salary": job.max_salary,
+            #     "currency_type": job.currency_type,
+            #     "salary_payment_period": job.salary_payment_period,
+            #     "job_url_id": job.job_url_id,
+            #     "job_url": job.job_url,
+            #     "posted_at": job.posted_at,
+            #     "company_name": company.name if company else "",
+            #     "company_description": company.description if company else "",
+            #     "company_location": company.location if company else "",
+            #     "contact_person_last_name": contact.last_name if contact else "",
+            #     "contact_person_phone_number": contact.phone_number if contact else None,
+            #     "contact_person_first_name": contact.first_name if contact else "",
+            #     "contact_person_email_address": contact.email_address if contact else None,
+            #     "contact_person_contact_url": contact.contact_url if contact else "",
+            #     "source": job.source,
+            #     "created_at": job.created_at,
+            # }
+
             record = {
-                "id": job.id,
                 "title": job.title,
                 "location": job.location,
                 "employment_type": job.employment_type,
                 "work_type": job.work_type,
-                # "description": job.description,
-                "education_required": job.education_required,
                 "min_experience": job.min_experience,
                 "max_experience": job.max_experience,
-                "min_salary": job.min_salary,
-                "max_salary": job.max_salary,
-                "currency_type": job.currency_type,
-                "salary_payment_period": job.salary_payment_period,
-                "job_url_id": job.job_url_id,
                 "job_url": job.job_url,
-                "posted_at": job.posted_at,
                 "company_name": company.name if company else "",
-                "company_description": company.description if company else "",
                 "company_location": company.location if company else "",
-                "contact_person_last_name": contact.last_name if contact else "",
-                "contact_person_phone_number": contact.phone_number if contact else None,
-                "contact_person_first_name": contact.first_name if contact else "",
                 "contact_person_email_address": contact.email_address if contact else None,
                 "contact_person_contact_url": contact.contact_url if contact else "",
-                "source": job.source,
-                "created_at": job.created_at,
             }
 
             records.append(record)
@@ -245,7 +261,7 @@ def export_scraped_jobs():
         #     "total_jobs": len(records)
         # }
 
-        client_email = "bde.mdu@mitrahsoft.in"
+        client_email = os.getenv("CLIENT_EMAIL")
 
         email_result = send_csv_email(
             file_path=str(file_path),

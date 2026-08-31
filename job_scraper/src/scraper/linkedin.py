@@ -14,6 +14,12 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from src.jobs.models import Job
 from src.database import SessionLocal
+from src.database import SessionLocal
+from src.company.service import create_company
+from src.contact.service import create_contact
+from src.jobs.service import create_skills
+from src.jobs.models import Job
+from datetime import datetime, timedelta
 
 logger = get_logger(__name__)
 
@@ -967,7 +973,7 @@ def save_filtered_text(run_id, index, header, about_text, people_text):
 
     return result, filename
 
-def extract_job_with_groq(filtered_text, linkedin_url):
+def extract_job_with_groq_old(filtered_text, linkedin_url):
     if not GROQ_ENABLED:
         return ""
 
@@ -1166,7 +1172,90 @@ JOB TEXT:
         logger.info(" ".join(str(value) for value in ("Groq API error:", e,)))
         return ""
 
-def parse_groq_response(response, url, header):
+def extract_job_with_groq(filtered_text, linkedin_url):
+    if not GROQ_ENABLED:
+        return ""
+
+    if not filtered_text:
+        return ""
+
+    if len(filtered_text.strip()) < 100:
+        return ""
+
+    req_fields = os.getenv("REQUIRED_LLM_FIELDS","")
+
+    prompt = f"""
+Extract ONLY the required job fields from the supplied LinkedIn job text.
+
+Required fields:
+
+{json.dumps(req_fields)}
+
+Return ONLY valid JSON with exactly these fields:
+
+{{
+    "job_title": "",
+    "job_location": "",
+    "employment_type": "",
+    "work_type": "",
+    "min_exp": null,
+    "max_exp": null,
+    "job_url": "{linkedin_url}",
+    "company_name": "",
+    "company_location": "",
+    "contact_person_mail": "",
+    "contact_person_contact_url": ""
+}}
+
+Rules:
+
+1. Use ONLY information explicitly present in the supplied text.
+2. Never guess, infer, or invent information.
+3. Missing string fields must be "".
+4. Missing min_exp or max_exp must be null.
+5. Return numbers only for min_exp and max_exp.
+6. "2-5 years" => min_exp=2, max_exp=5.
+7. "2+ years" => min_exp=2, max_exp=null.
+8. "minimum 3 years" => min_exp=3, max_exp=null.
+9. "1 year" => min_exp=1, max_exp=1.
+10. "freshers" => min_exp=0, max_exp=0.
+11. job_url must always be the supplied LinkedIn job URL.
+12. Extract company_name only when explicitly available.
+13. Extract company_location only when explicitly available.
+14. Extract job_location only when explicitly available.
+15. employment_type should be values such as Full-time, Part-time, Contract, Internship, etc.
+16. work_type should be Remote, Hybrid, or On-site when explicitly available.
+17. contact_person_mail must contain an actual email address when available.
+18. contact_person_contact_url must contain an actual contact person's LinkedIn URL when available.
+19. Do not treat a company URL as a contact person's URL.
+20. Do not use "Meet the hiring team" as a person's contact.
+21. Do not add any fields other than the required fields.
+22. Do not return markdown.
+23. Do not return explanations.
+
+JOB TEXT:
+
+{filtered_text}
+"""
+
+    try:
+        response = client.responses.create(
+            model=GROQ_MODEL,
+            input=prompt
+        )
+
+        return response.output_text
+
+    except Exception as e:
+        logger.info(
+            " ".join(
+                str(value)
+                for value in ("Groq API error:", e)
+            )
+        )
+        return ""
+
+def parse_groq_response_old(response, url, header):
     if not response:
         return None
 
@@ -1445,6 +1534,112 @@ def parse_groq_response(response, url, header):
 
     return data
 
+def parse_groq_response(response, url, header):
+    if not response:
+        return None
+
+    response = response.strip()
+
+    if response.startswith("```"):
+        response = re.sub(
+            r"^```(?:json)?",
+            "",
+            response,
+            flags=re.IGNORECASE
+        )
+        response = re.sub(r"```$", "", response)
+        response = response.strip()
+
+    try:
+        data = json.loads(response)
+
+    except Exception as e:
+        logger.info(
+            " ".join(
+                str(value)
+                for value in ("JSON parsing error:", e)
+            )
+        )
+        logger.info(
+            " ".join(
+                str(value)
+                for value in ("Raw Groq response:", response)
+            )
+        )
+        return None
+
+    defaults = {
+        "job_title": "",
+        "job_location": "",
+        "employment_type": "",
+        "work_type": "",
+        "min_exp": None,
+        "max_exp": None,
+        "job_url": url,
+        "company_name": "",
+        "company_location": "",
+        "contact_person_mail": "",
+        "contact_person_contact_url": "",
+    }
+
+    result = {}
+
+    for field, default in defaults.items():
+        value = data.get(field, default)
+
+        if isinstance(default, str):
+            if value is None:
+                value = ""
+
+            if not isinstance(value, str):
+                value = str(value)
+
+            value = clean_text(value)
+
+        result[field] = value
+
+    # Use header values as fallback
+    if not result["job_title"]:
+        result["job_title"] = header.get("job_title", "")
+
+    if not result["job_location"]:
+        result["job_location"] = header.get("job_location", "")
+
+    # Always use the actual LinkedIn URL
+    result["job_url"] = url
+
+    # Normalize experience
+    for field in ["min_exp", "max_exp"]:
+        value = result[field]
+
+        try:
+            if value is not None:
+                value = float(value)
+
+                if value.is_integer():
+                    value = int(value)
+
+        except Exception:
+            value = None
+
+        result[field] = value
+
+    # Normalize email
+    result["contact_person_mail"] = clean_text(
+        str(
+            result.get("contact_person_mail", "") or ""
+        )
+    )
+
+    # Normalize contact URL
+    result["contact_person_contact_url"] = clean_text(
+        str(
+            result.get("contact_person_contact_url", "") or ""
+        )
+    )
+
+    return result
+
 def process_job(page, url, run_id, index, job_id):
     logger.info(f"Processing job {index}: {url}")
 
@@ -1538,18 +1733,115 @@ def process_job(page, url, run_id, index, job_id):
         result['job_url_id'] = job_id
  
     #replace about the job
-    if result['job_description']:
-        result['job_description'] = about_text
+    # if result.get('job_description'):
+    #     result['job_description'] = about_text
 
     if not result:
         return None
 
     result["_raw_file_path"] = raw_file_path
 
-    logger.info(f"Extracted: {result['job_title']} | "
-        f"{result['company']}")
+    logger.info(f"Extracted: {result['job_title']}")
 
     return result
+
+def save_job_to_db(db, job_json, run_id):
+    try:
+        company_result = create_company(
+            db,
+            name=job_json.get("company", ""),
+            run_id=run_id,
+            location=job_json.get("company_location")
+        )
+        company_id = company_result if isinstance(company_result, str) else None
+
+        posted_by = job_json.get("posted_by", {})
+        name_parts = posted_by.get("name", "").split(" ", 1)
+        first_name = name_parts[0] if name_parts else ""
+        last_name = name_parts[1] if len(name_parts) > 1 else ""
+
+        posted_by_contact_id = None
+        if first_name:
+            contact_result = create_contact(
+                db,
+                first_name=first_name,
+                last_name=last_name,
+                contact_url=posted_by.get("linkedin_url"),
+                company_id=company_id,
+                run_id=run_id
+            )
+            posted_by_contact_id = contact_result if isinstance(contact_result, str) else None
+
+        for rec in job_json.get("recommended_contacts", []):
+            rec_parts = rec.get("name", "").split(" ", 1)
+            if rec_parts[0]:
+                create_contact(
+                    db,
+                    first_name=rec_parts[0],
+                    last_name=rec_parts[1] if len(rec_parts) > 1 else "",
+                    contact_url=rec.get("linkedin_url"),
+                    company_id=company_id,
+                    run_id=run_id
+                )
+
+        salary = job_json.get("salary", {})
+        experience = job_json.get("experience_required", {})
+        posted_time = job_json.get("posted_time", {}).get("minutes_ago", 0)
+
+        try:
+            posted_time = int(posted_time)
+        except (TypeError, ValueError):
+            posted_time = 0
+
+        posted_at = datetime.now() - timedelta(minutes=posted_time)
+
+        job = Job(
+            title=job_json.get("job_title", ""),
+            location=job_json.get("job_location"),
+            description=job_json.get("job_description"),
+            min_experience=experience.get("min_exp"),
+            max_experience=experience.get("max_exp"),
+            education_required=job_json.get("education_required"),
+            employment_type=job_json.get("employment_type"),
+            min_salary=salary.get("min_sal"),
+            max_salary=salary.get("max_sal"),
+            currency_type=salary.get("currency"),
+            salary_payment_period=salary.get("payment_period"),
+            work_type=job_json.get("work_type"),
+            source="LinkedIn",
+            job_url=job_json.get("linkedin_job_url", ""),
+            company_id=company_id,
+            posted_at=posted_at,
+            posted_by=posted_by_contact_id,
+            run_id=run_id,
+            is_active=True,
+            job_url_id=job_json.get("job_url_id", "")
+        )
+        db.add(job)
+        db.flush()
+
+        create_skills(
+            db,
+            job.id,
+            required_skills=job_json.get("required_skills", []),
+            preferred_skills=job_json.get("preferred_skills", [])
+        )
+
+        raw_file_path = job_json.get("_raw_file_path")
+        if raw_file_path and os.path.exists(raw_file_path):
+            dir_name = os.path.dirname(raw_file_path)
+            old_timestamp = os.path.basename(raw_file_path).split("_", 1)[1].replace(".txt", "")
+            new_filename = f"{job.id}_{old_timestamp}.txt"
+            new_path = os.path.join(dir_name, new_filename)
+            os.rename(raw_file_path, new_path)
+
+        db.commit()
+        return job.id
+
+    except Exception as e:
+        db.rollback()
+        logger.error("Failed to save job to DB: %s", e)
+        return None
 
 def scrape_linkedin_jobs(
     run_id: str,
@@ -1652,13 +1944,18 @@ def scrape_linkedin_jobs(
                     len(job_links)
                 )
 
+                processed_count = 0
                 for index, job_id in enumerate(job_ids, start=1):
                     url = job_id_to_url.get(job_id)
                     try:
                         result = process_job(page, url, run_id, index, job_id)
 
+                        # if result:
+                        #     results.append(result)
                         if result:
-                            results.append(result)
+                            saved_job_id = save_job_to_db(db, result, run_id)
+                            if saved_job_id:
+                                processed_count += 1
 
                     except Exception as e:
                         logger.error(
@@ -1677,12 +1974,11 @@ def scrape_linkedin_jobs(
                         "workplace": "Remote",
                         "total_matching_jobs": total_matching_jobs,
                         "job_urls_collected": len(job_links),
-                        "jobs_processed": len(results),
+                        "jobs_processed": processed_count,
                         "max_jobs": max_jobs,
                         "max_pagination_pages": max_pagination_pages,
                         "linkedin_page_size": linkedin_page_size
-                    },
-                    "jobs": results
+                    }
                 }
 
                 logger.info(
