@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Query
 from src.config import get_logger
-from src.jobs.service import get_posted_jobs
+from src.jobs.service import export_scraped_jobs, get_posted_jobs
 from src.utils.job_validator import validate_job_params
+from fastapi import APIRouter, HTTPException, status
 
 logger = get_logger(__name__)
 
@@ -33,3 +34,20 @@ def list_jobs(page: int = 1, per_page: int = 10, filter_column: str = None, filt
             "status_code": 500,
             "message": "Error while listing jobs"
         }
+
+
+@router.post("/export")
+def export_jobs():
+    try:
+        result = export_scraped_jobs()
+        return {
+            "status_code": 200,
+            "message": "Scrape task submitted",
+            "data":result
+        }
+    except Exception as e:
+        logger.error("Error submitting scrape task: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to submit scrape task",
+        )

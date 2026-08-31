@@ -10,11 +10,12 @@ from src.jobs.models import Job
 from src.scraper.linkedin import scrape_linkedin_jobs
 from src.config import get_logger
 import shutil
+from datetime import datetime, timedelta
 
 logger = get_logger(__name__)
 
 @celery_app.task(name="tasks.scrape_and_insert")
-def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
+def scrape_and_insert(search_keyword=None, search_location=None, max_jobs= None):
     db = SessionLocal()
     run_id = None
     try:
@@ -75,6 +76,9 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
 
             salary = job_json.get("salary", {})
             experience = job_json.get("experience_required", {})
+            posted_time = job_json.get('posted_time',{}).get('minutes_ago','')
+
+            posted_at = datetime.now() - timedelta(minutes=posted_time)
 
             job = Job(
                 title=job_json.get("job_title", ""),
@@ -92,6 +96,7 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
                 source="LinkedIn",
                 job_url=job_json.get("linkedin_job_url", ""),
                 company_id=company_id,
+                posted_at=posted_at,
                 posted_by=posted_by_contact_id,
                 run_id=run_id,
                 is_active=True,

@@ -10,7 +10,7 @@ router = APIRouter(
 )
 
 @router.post("/scrap_jobs")
-def scrape_jobs(search_keyword: str, search_location: str, max_jobs: int = 10):
+def scrape_jobs(search_keyword: str, search_location: str, max_jobs: int = None):
     try:
         result = scrape_and_insert.delay(search_keyword, search_location, max_jobs)
         return {

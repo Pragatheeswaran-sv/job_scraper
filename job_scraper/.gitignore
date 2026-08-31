@@ -38,3 +38,4 @@ build/
 # Poetry (keep poetry.lock committed)
 poetry.toml
 /logs
+/exports

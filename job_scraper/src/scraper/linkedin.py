@@ -25,11 +25,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY","")
 
 
 SEARCH_KEYWORD = "Python"
-SEARCH_LOCATION = "chennai"
-MAX_JOBS = 3
 MAX_PAGINATION_PAGES = 100
-LINKEDIN_PAGE_SIZE = 25
-MAX_SCROLLS_PER_PAGE = 20
 SEARCH_DEBUG_FILE = "linkedin_search_debug.html"
 GROQ_MODEL = "openai/gpt-oss-120b"
 
@@ -144,25 +140,41 @@ def linkedin_login(page):
 
         return False
 
-def build_search_url(start=0):
-    keyword = quote(SEARCH_KEYWORD)
-    location = quote(SEARCH_LOCATION)
+# def build_search_url(start=0):
+#     keyword = quote(SEARCH_KEYWORD)
+#     location = quote(SEARCH_LOCATION)
 
-    return (
+#     return (
+#         "https://www.linkedin.com/jobs/search/"
+#         f"?keywords={keyword}"
+#         f"&location={location}"
+#         "&f_TPR=r86400"
+#         "&f_WT=2"
+#         f"&start={start}"
+#     )
+
+def build_search_url(start, search_location):
+    keyword = quote(SEARCH_KEYWORD)
+
+    url = (
         "https://www.linkedin.com/jobs/search/"
         f"?keywords={keyword}"
-        f"&location={location}"
         "&f_TPR=r86400"
         "&f_WT=2"
         f"&start={start}"
     )
 
-def open_job_search(page):
-    search_url = build_search_url(0)
+    if search_location:
+        url += f"&location={quote(search_location)}"
+
+    return url
+
+def open_job_search(page, search_location):
+    search_url = build_search_url(0, search_location)
 
     logger.info("Opening LinkedIn job search...")
     logger.info(" ".join(str(value) for value in ("Keyword:", SEARCH_KEYWORD,)))
-    logger.info(" ".join(str(value) for value in ("Location:", SEARCH_LOCATION,)))
+    logger.info(" ".join(str(value) for value in ("Location:", search_location,)))
     logger.info(" ".join(str(value) for value in ("Search URL:", search_url,)))
 
     page.goto(search_url, wait_until="domcontentloaded", timeout=120000)
@@ -268,7 +280,7 @@ def extract_job_id(href):
 
     return None
 
-def collect_job_links_from_dom(page, job_links, seen_ids):
+def collect_job_links_from_dom(page, job_links, seen_ids, max_jobs):
     new_jobs = 0
 
     try:
@@ -276,7 +288,8 @@ def collect_job_links_from_dom(page, job_links, seen_ids):
         count = anchors.count()
 
         for i in range(count):
-            if len(job_links) >= MAX_JOBS:
+            # if len(job_links) >= max_jobs:
+            if max_jobs is not None and len(job_links) >= max_jobs:
                 break
 
             try:
@@ -302,7 +315,7 @@ def collect_job_links_from_dom(page, job_links, seen_ids):
 
     return new_jobs
 
-def collect_job_links_from_html(page, job_links, seen_ids):
+def collect_job_links_from_html(page, job_links, seen_ids, max_jobs):
     new_jobs = 0
 
     try:
@@ -310,7 +323,8 @@ def collect_job_links_from_html(page, job_links, seen_ids):
         matches = re.findall(r"/jobs/view/(\d+)", html)
 
         for job_id in matches:
-            if len(job_links) >= MAX_JOBS:
+            # if len(job_links) >= max_jobs:
+            if max_jobs is not None and len(job_links) >= max_jobs:
                 break
 
             if job_id in seen_ids:
@@ -380,7 +394,7 @@ def find_job_list_container(page):
 
     return None
 
-def scroll_job_list(page, job_links, seen_ids, scroll_round=1):
+def scroll_job_list(page, job_links, seen_ids, max_jobs, scroll_round=1):
     before_count = len(job_links)
 
     container = find_job_list_container(page)
@@ -447,10 +461,11 @@ def scroll_job_list(page, job_links, seen_ids, scroll_round=1):
     except Exception as e:
         logger.info(" ".join(str(value) for value in ("JavaScript scrolling error:", e,)))
 
-    new_jobs = collect_job_links_from_dom(page, job_links, seen_ids)
+    new_jobs = collect_job_links_from_dom(page, job_links, seen_ids, max_jobs)
 
-    if len(job_links) < MAX_JOBS:
-        new_jobs += collect_job_links_from_html(page, job_links, seen_ids)
+    # if len(job_links) < max_jobs:
+    if max_jobs is None or len(job_links) < max_jobs:
+        new_jobs += collect_job_links_from_html(page, job_links, seen_ids, max_jobs)
 
     after_count = len(job_links)
 
@@ -461,19 +476,19 @@ def scroll_job_list(page, job_links, seen_ids, scroll_round=1):
 
     return new_jobs
 
-def collect_all_job_links(page):
+def collect_all_job_links(page, search_location, max_scroll_per_page, linkedin_page_size, max_jobs):
     logger.info("Collecting job links...")
 
     job_links = []
     seen_ids = set()
     page_number = 1
 
-    while len(job_links) < MAX_JOBS and page_number <= MAX_PAGINATION_PAGES:
-        start = (page_number - 1) * LINKEDIN_PAGE_SIZE
+    while ((max_jobs is None or len(job_links) < max_jobs) and page_number <= MAX_PAGINATION_PAGES):
+        start = (page_number - 1) * linkedin_page_size
 
         logger.info(f"Pagination page {page_number}, offset {start}")
 
-        page_url = build_search_url(start)
+        page_url = build_search_url(start, search_location)
 
         try:
             page.goto(page_url, wait_until="domcontentloaded", timeout=120000)
@@ -486,13 +501,13 @@ def collect_all_job_links(page):
         page_start_count = len(job_links)
         no_new_count = 0
 
-        collect_job_links_from_dom(page, job_links, seen_ids)
+        collect_job_links_from_dom(page, job_links, seen_ids, max_jobs)
 
-        if len(job_links) < MAX_JOBS:
-            collect_job_links_from_html(page, job_links, seen_ids)
+        if max_jobs is None or len(job_links) < max_jobs:
+            collect_job_links_from_html(page, job_links, seen_ids, max_jobs)
 
-        for scroll_round in range(1, MAX_SCROLLS_PER_PAGE + 1):
-            if len(job_links) >= MAX_JOBS:
+        for scroll_round in range(1, max_scroll_per_page + 1):
+            if max_jobs is not None and len(job_links) >= max_jobs:
                 break
 
             before_scroll_count = len(job_links)
@@ -501,7 +516,8 @@ def collect_all_job_links(page):
                 page,
                 job_links,
                 seen_ids,
-                scroll_round
+                max_jobs,
+                scroll_round,
             )
 
             after_scroll_count = len(job_links)
@@ -522,7 +538,7 @@ def collect_all_job_links(page):
             f"{page_jobs_found} jobs, "
             f"{len(job_links)} total")
 
-        if len(job_links) >= MAX_JOBS:
+        if max_jobs is not None and len(job_links) >= max_jobs:
             break
 
         if page_jobs_found == 0:
@@ -1538,18 +1554,14 @@ def process_job(page, url, run_id, index, job_id):
 def scrape_linkedin_jobs(
     run_id: str,
     search_keyword: str = SEARCH_KEYWORD,
-    search_location: str = SEARCH_LOCATION,
-    max_jobs: int = MAX_JOBS,
+    search_location: str = "",
+    max_jobs: int = None,
     max_pagination_pages: int = MAX_PAGINATION_PAGES,
-    linkedin_page_size: int = LINKEDIN_PAGE_SIZE,
-    max_scrolls_per_page: int = MAX_SCROLLS_PER_PAGE
+    linkedin_page_size: int = 25,
+    max_scrolls_per_page: int = 20
 ):
     global SEARCH_KEYWORD
-    global SEARCH_LOCATION
-    global MAX_JOBS
     global MAX_PAGINATION_PAGES
-    global LINKEDIN_PAGE_SIZE
-    global MAX_SCROLLS_PER_PAGE
 
     db = SessionLocal()
 
@@ -1560,13 +1572,13 @@ def scrape_linkedin_jobs(
                 "message": "Search keyword is required"
             }
 
-        if not search_location:
-            return {
-                "status_code": status.HTTP_400_BAD_REQUEST,
-                "message": "Search location is required"
-            }
+        # if not search_location:
+        #     return {
+        #         "status_code": status.HTTP_400_BAD_REQUEST,
+        #         "message": "Search location is required"
+        #     }
 
-        if max_jobs <= 0:
+        if max_jobs is not None and max_jobs <= 0:
             return {
                 "status_code": status.HTTP_400_BAD_REQUEST,
                 "message": "max_jobs must be greater than 0"
@@ -1580,11 +1592,7 @@ def scrape_linkedin_jobs(
         )
 
         SEARCH_KEYWORD = search_keyword
-        SEARCH_LOCATION = search_location
-        MAX_JOBS = max_jobs
         MAX_PAGINATION_PAGES = max_pagination_pages
-        LINKEDIN_PAGE_SIZE = linkedin_page_size
-        MAX_SCROLLS_PER_PAGE = max_scrolls_per_page
 
         results = []
 
@@ -1611,11 +1619,11 @@ def scrape_linkedin_jobs(
                         "message": "LinkedIn login failed"
                     }
 
-                open_job_search(page)
+                open_job_search(page, search_location)
                 page.wait_for_timeout(5000)
 
                 total_matching_jobs = get_total_result_count(page)
-                job_links = collect_all_job_links(page)
+                job_links = collect_all_job_links(page, search_location, max_scrolls_per_page, linkedin_page_size, max_jobs)
                 job_ids = get_unmatched_job_ids(db, job_links)
                 job_id_to_url = {
                     extract_job_id_from_url(url): url
