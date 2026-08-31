@@ -10,11 +10,53 @@ from src.jobs.models import Job
 from src.scraper.linkedin import scrape_linkedin_jobs
 from src.config import get_logger
 import shutil
+from datetime import datetime, timedelta
 
 logger = get_logger(__name__)
 
 @celery_app.task(name="tasks.scrape_and_insert")
-def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
+def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=None):
+    db = SessionLocal()
+    run_id = None
+    try:
+        run_id = create_scrape_run(db, scrape_status="pending")
+        logger.info("ScrapeRun created: %s", run_id)
+
+        scrape_result = scrape_linkedin_jobs(
+            run_id,
+            search_keyword=search_keyword,
+            search_location=search_location,
+            max_jobs=max_jobs,
+        )
+
+        if scrape_result["status_code"] != 200:
+            update_scrape_run(db, run_id, "failed", exception=scrape_result.get("message"))
+            return {"run_id": run_id, "status": "failed", "message": scrape_result.get("message")}
+
+        records_inserted = scrape_result["data"]["search_summary"]["jobs_processed"]
+
+        update_scrape_run(db, run_id, "success", records_scraped=records_inserted)
+        shutil.rmtree(f"logs/{run_id}", ignore_errors=True)
+
+        logger.info("Scrape completed: %s records", records_inserted)
+        return {"run_id": run_id, "status": "success", "records": records_inserted}
+
+    except Exception as e:
+        db.rollback()
+        logger.error("Scrape task failed: %s", e)
+
+        if run_id:
+            try:
+                update_scrape_run(db, run_id, "failed", exception=str(e))
+            except Exception:
+                logger.error("Failed to update ScrapeRun %s", run_id)
+
+        return {"run_id": run_id, "status": "failed", "message": str(e)}
+
+    finally:
+        db.close()
+
+# def scrape_and_insert_copy(search_keyword=None, search_location=None, max_jobs= None):
     db = SessionLocal()
     run_id = None
     try:
@@ -75,6 +117,9 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
 
             salary = job_json.get("salary", {})
             experience = job_json.get("experience_required", {})
+            posted_time = job_json.get('posted_time',{}).get('minutes_ago','')
+
+            posted_at = datetime.now() - timedelta(minutes=posted_time)
 
             job = Job(
                 title=job_json.get("job_title", ""),
@@ -92,9 +137,11 @@ def scrape_and_insert(search_keyword=None, search_location=None, max_jobs=10):
                 source="LinkedIn",
                 job_url=job_json.get("linkedin_job_url", ""),
                 company_id=company_id,
+                posted_at=posted_at,
                 posted_by=posted_by_contact_id,
                 run_id=run_id,
                 is_active=True,
+                job_url_id=job_json.get("job_url_id", "")
             )
             db.add(job)
             db.flush()
