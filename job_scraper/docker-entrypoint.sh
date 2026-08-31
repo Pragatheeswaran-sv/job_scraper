@@ -19,4 +19,5 @@ echo "Seeding sample users..."
 python -m src.insert_user
 
 echo "Starting FastAPI..."
-exec uvicorn src.main:app --host 0.0.0.0 --port 8000
+# exec uvicorn src.main:app --host 0.0.0.0 --port 8000
+exec "$@"

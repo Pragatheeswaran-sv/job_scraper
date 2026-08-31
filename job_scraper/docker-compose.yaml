@@ -8,4 +8,22 @@ services:
       - .env
     volumes:
       - .:/app
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000
+    entrypoint: ["/bin/sh", "-c", "sed -i 's/\\r$//' /app/docker-entrypoint.sh && exec /app/docker-entrypoint.sh \"$@\"", "--"]
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  celery_worker:
+    build: .
+    container_name: celery_worker_v2
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    entrypoint: ["celery", "-A", "src.celery_app", "worker", "--loglevel=info", "--pool=solo"]
+    depends_on:
+      - redis

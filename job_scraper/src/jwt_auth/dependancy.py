@@ -4,7 +4,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from src.database import get_db
-from src.services.jwt_auth.service import is_token_blacklisted
+from src.jwt_auth.service import is_token_blacklisted
 from src.utils.jwt_handler import decode_token
 
 
