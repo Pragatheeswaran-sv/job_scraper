@@ -233,14 +233,14 @@ def export_scraped_jobs():
 
             record = {
                 "title": job.title,
-                "location": job.location,
+                # "location": job.location,
                 "employment_type": job.employment_type,
                 "work_type": job.work_type,
                 "min_experience": job.min_experience,
                 "max_experience": job.max_experience,
                 "job_url": job.job_url,
                 "company_name": company.name if company else "",
-                "company_location": company.location if company else "",
+                # "company_location": company.location if company else "",
                 "contact_person_email_address": contact.email_address if contact else None,
                 "contact_person_contact_url": contact.contact_url if contact else "",
             }
