@@ -11,10 +11,11 @@ def create_contact(db: Session, first_name: str | None = None, last_name: str | 
         existing = db.query(Contact).filter(Contact.first_name == first_name, Contact.last_name == last_name, Contact.run_id == run_id).first()
         if existing:
             logger.info("Contact already exists, skipping: %s %s", first_name, last_name)
-            return {
-                "status_code": status.HTTP_409_CONFLICT,
-                "message": "Contact already exists"
-            }
+            return existing.id
+            # return {
+            #     "status_code": status.HTTP_409_CONFLICT,
+            #     "message": "Contact already exists"
+            # }
         contact = Contact(
             first_name = first_name, 
             last_name = last_name, 

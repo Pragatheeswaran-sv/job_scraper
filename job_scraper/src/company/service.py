@@ -11,10 +11,11 @@ def create_company(db: Session, name: str, run_id: str, location: str | None = N
         existing = db.query(Company).filter(Company.name == name).first()
         if existing:
             logger.info("Company already exists, skipping: %s", name)
-            return {
-                "status_code": status.HTTP_409_CONFLICT,
-                "message": "Company already exists"
-            }
+            return existing.id
+            # return {
+            #     "status_code": status.HTTP_409_CONFLICT,
+            #     "message": "Company already exists"
+            # }
         
         company = Company(
             name = name, 
