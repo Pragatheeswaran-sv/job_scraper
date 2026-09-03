@@ -859,6 +859,75 @@ def extract_about_job(page, main_text):
 
     return ""
 
+def extract_contact_profile_url(page):
+    try:
+        section = page.locator(
+            "section:has-text('People you can reach out to')"
+        ).first
+
+        if section.count() == 0:
+            return ""
+
+        links = section.locator("a")
+
+        for i in range(links.count()):
+            href = links.nth(i).get_attribute("href")
+
+            if href and "/in/" in href:
+                if href.startswith("/"):
+                    href = "https://www.linkedin.com" + href
+
+                return href.split("?")[0]
+
+    except Exception as e:
+        logger.info("Contact profile URL extraction error: %s", e)
+
+    return ""
+
+def extract_contact_email_from_profile(page, profile_url):
+    try:
+        if not profile_url:
+            return ""
+
+        page.goto(
+            profile_url,
+            wait_until="domcontentloaded",
+            timeout=30000
+        )
+
+        contact_info = page.get_by_text("Contact info", exact=True)
+
+        if contact_info.count() == 0:
+            logger.info("Contact info not available")
+            return ""
+
+        contact_info.first.click()
+
+        page.wait_for_timeout(1000)
+
+        dialogs = page.locator("[role='dialog']:visible")
+
+        if dialogs.count() == 0:
+            logger.info("Contact info dialog not found")
+            return ""
+
+        dialog_text = dialogs.first.inner_text()
+
+        email_match = re.search(
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
+            dialog_text
+        )
+
+        if email_match:
+            return email_match.group(0)
+
+        logger.info("Email not available")
+        return ""
+
+    except Exception as e:
+        logger.info(f"Could not extract contact email: {e}")
+        return ""
+    
 def extract_people_you_can_reach_out(main_text):
     if not main_text:
         return ""
@@ -1664,6 +1733,12 @@ def process_job(page, url, run_id, index, job_id):
     header = extract_job_header(page, main_text)
     about_text = extract_about_job(page, main_text)
     people_text = extract_people_you_can_reach_out(main_text)
+    contact_url = extract_contact_profile_url(page)
+    contact_email = ""
+
+    if contact_url:
+        contact_email = extract_contact_email_from_profile(page, contact_url)
+    logger.info("NAV----> Contact URL: %s | Contact Email: %s",contact_url,contact_email)
 
     filtered_text, raw_file_path  = save_filtered_text(
         run_id,
@@ -1740,6 +1815,8 @@ def process_job(page, url, run_id, index, job_id):
         return None
 
     result["_raw_file_path"] = raw_file_path
+    result["contact_person_contact_url"] = contact_url
+    result["contact_person_mail"] = contact_email
 
     logger.info(f"Extracted: {result['job_title']}")
 

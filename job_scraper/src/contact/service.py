@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 def create_contact(db: Session, first_name: str | None = None, last_name: str | None = None, email_address: str | None = None, phone_number: str | None = None, contact_url: str | None = None, company_id: str | None = None, run_id: str | None = None) -> Contact:
     try:
-        existing = db.query(Contact).filter(Contact.first_name == first_name, Contact.last_name == last_name, Contact.run_id == run_id).first()
+        existing = db.query(Contact).filter(Contact.first_name == first_name, Contact.last_name == last_name, Contact.run_id == run_id, Contact.contact_url == contact_url).first()
         if existing:
             logger.info("Contact already exists, skipping: %s %s", first_name, last_name)
             return existing.id
