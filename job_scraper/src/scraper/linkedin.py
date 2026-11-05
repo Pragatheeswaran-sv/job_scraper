@@ -1,4 +1,8 @@
 from playwright.sync_api import sync_playwright
+try:
+    from playwright_stealth import stealth_sync
+except ImportError:
+    stealth_sync = None
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
@@ -27,6 +31,7 @@ load_dotenv()
 
 LINKEDIN_EMAIL = os.getenv("LINKEDIN_EMAIL", "")
 LINKEDIN_PASSWORD = os.getenv("LINKEDIN_PASSWORD", "")
+LINKEDIN_LI_AT = os.getenv("LINKEDIN_LI_AT", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY","")
 
 
@@ -35,10 +40,8 @@ MAX_PAGINATION_PAGES = 100
 SEARCH_DEBUG_FILE = "linkedin_search_debug.html"
 GROQ_MODEL = "openai/gpt-oss-120b"
 
-if not LINKEDIN_EMAIL:
-    raise ValueError("LINKEDIN_EMAIL is missing")
-if not LINKEDIN_PASSWORD:
-    raise ValueError("LINKEDIN_PASSWORD is missing")
+if not LINKEDIN_LI_AT and (not LINKEDIN_EMAIL or not LINKEDIN_PASSWORD):
+    raise ValueError("Either LINKEDIN_LI_AT or (LINKEDIN_EMAIL and LINKEDIN_PASSWORD) must be provided")
 
 GROQ_ENABLED = bool(GROQ_API_KEY)
 
@@ -93,16 +96,55 @@ def normalize_posted_time(posted_text):
     return {"value": original, "minutes_ago": minutes}
 
 def linkedin_login(page):
-    logger.info("Opening LinkedIn login...")
+    # logger.info("Opening LinkedIn login...")
+    
 
-    page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded", timeout=120000)
+    # page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded", timeout=120000)
+    # page.wait_for_timeout(5000)
+    from pathlib import Path
+    logger.info("Opening LinkedIn login test...")
+
+    debug_dir = Path("logs/linkedin_debug")
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    if LINKEDIN_LI_AT:
+        logger.info("Using LINKEDIN_LI_AT session cookie, checking feed...")
+        page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded", timeout=120000)
+        page.wait_for_timeout(5000)
+        if "/feed" in page.url or "linkedin.com/in/" in page.url:
+            logger.info("Successfully authenticated via session cookie!")
+            return True
+        logger.warning("Cookie auth did not navigate to feed, falling back to credentials...")
+
+    page.goto(
+            "https://www.linkedin.com/login",
+            wait_until="domcontentloaded",
+            timeout=120000,
+        )
     page.wait_for_timeout(5000)
 
+    # Capture the page before trying to locate the login fields
+    logger.info("Current URL: %s", page.url)
+    logger.info("Page title: %s", page.title())
+
+    page.screenshot(
+        path=str(debug_dir / "linkedin_login.png"),
+        full_page=True,
+    )
+
+    (debug_dir / "linkedin_login.html").write_text(
+        page.content(),
+        encoding="utf-8",
+    )
+
+    logger.info("Saved LinkedIn login screenshot and HTML")
+    
     if "/feed" in page.url:
         logger.info("Already logged in.")
         return True
 
     try:
+        logger.info(f"Logging in with email: {LINKEDIN_EMAIL}")
         email_input = page.locator("input[type='email']").last
         email_input.wait_for(state="visible", timeout=30000)
         email_input.fill(LINKEDIN_EMAIL)
@@ -1855,17 +1897,43 @@ def scrape_linkedin_jobs(
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True,
-                slow_mo=300
+                slow_mo=300,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-infobars",
+                    "--disable-dev-shm-usage",
+                ]
             )
 
             context = browser.new_context(
                 viewport={
                     "width": 1440,
                     "height": 900
-                }
+                },
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+                locale="en-US",
+                timezone_id="America/New_York",
             )
 
+            if LINKEDIN_LI_AT:
+                context.add_cookies([{
+                    "name": "li_at",
+                    "value": LINKEDIN_LI_AT,
+                    "domain": ".www.linkedin.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "None"
+                }])
+
             page = context.new_page()
+            if stealth_sync:
+                try:
+                    stealth_sync(page)
+                except Exception as stealth_err:
+                    logger.warning(f"Failed to apply stealth: {stealth_err}")
 
             try:
                 if not linkedin_login(page):
